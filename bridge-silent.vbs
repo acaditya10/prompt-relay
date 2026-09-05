@@ -1,2 +1,3 @@
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run "node D:\Projects\opencode-mobile-notify\bridge.js", 0, False
+WshShell.CurrentDirectory = "D:\Projects\opencode-mobile-notify"
+WshShell.Run "node bridge.js", 0, False

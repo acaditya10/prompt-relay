@@ -1,12 +1,15 @@
 {
   "name": "prompt-relay",
-  "version": "2.0.0",
-  "description": "Send input prompts to your phone via ntfy.sh — one-time setup, works forever",
-  "main": "index.js",
+  "version": "3.0.0",
+  "description": "Send opencode permission prompts to your phone. Respond with a tap.",
+  "type": "module",
+  "main": "bridge.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node bridge.js",
     "send": "node index.js send",
-    "listen": "node index.js listen"
+    "bridge": "node bridge.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.18.23"
+  }
 }

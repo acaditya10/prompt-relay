@@ -1,40 +1,33 @@
 #!/usr/bin/env node
 
 /**
- * opencode-bridge — Respond to opencode permission prompts from your phone
+ * opencode-bridge — Start opencode server + send permission prompts to phone
  *
- * Prerequisites:
- *   - opencode running on the same machine (with server enabled)
- *   - ntfy app installed on phone, subscribed to your topic
+ * This starts its own opencode server. No need to run "opencode" separately.
+ * Just run this script and it handles everything.
  *
  * Usage:
- *   node bridge.js                    # Uses defaults (port 4096, topic opencode-input)
- *   node bridge.js --port 4096        # Custom opencode server port
- *   node bridge.js --topic my-topic   # Custom ntfy topic
+ *   node bridge.js
  */
 
-const https = require('https');
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+import { createOpencode, createOpencodeClient } from '@opencode-ai/sdk';
+import https from 'https';
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ─── Config ─────────────────────────────────────────────────
-const args = process.argv.slice(2);
-function getArg(name, fallback) {
-  const idx = args.indexOf(`--${name}`);
-  return idx >= 0 && args[idx + 1] ? args[idx + 1] : fallback;
-}
-
-const CONFIG_PATH = path.join(__dirname, '..', '.config.json');
+const CONFIG_PATH = path.join(__dirname, '.config.json');
 let fileConfig = {};
 try { fileConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch {}
 
-const OPENCODE_PORT = parseInt(getArg('port', '4096'));
-const NTFY_TOPIC = getArg('topic', fileConfig.topic || 'opencode-input');
+const NTFY_TOPIC = fileConfig.topic || 'opencode-input';
 const NTFY_URL = `https://ntfy.sh/${NTFY_TOPIC}`;
-const OPENCODE_URL = `http://127.0.0.1:${OPENCODE_PORT}`;
 
-// Pending permissions: Map<permissionId, { sessionId, message, tool, pattern, timestamp }>
+// Pending permissions: Map<permissionId, { sessionId, message, tool, timestamp }>
 const pendingPermissions = new Map();
 
 // ─── HTTP helpers ───────────────────────────────────────────
@@ -58,7 +51,7 @@ function httpPost(url, body, headers = {}) {
 function httpRequest(url) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
-    http.get(url, (res) => {
+    mod.get(url, (res) => {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
@@ -69,14 +62,13 @@ function httpRequest(url) {
   });
 }
 
-// ─── Send ntfy notification ─────────────────────────────────
-async function sendNotification(sessionId, permissionId, event) {
-  const tool = event.properties?.tool || event.properties?.action || 'unknown';
-  const pattern = event.properties?.pattern || event.properties?.path || '';
-  const message = event.properties?.message || `Permission needed for: ${tool}`;
+// ─── Send ntfy notification with action buttons ─────────────
+async function sendNotification(sessionId, permissionId, props) {
+  const tool = props?.tool || props?.action || 'unknown';
+  const pattern = props?.pattern || props?.path || '';
+  const message = props?.message || `Permission needed for: ${tool}`;
 
-  const id = permissionId;
-  pendingPermissions.set(id, {
+  pendingPermissions.set(permissionId, {
     sessionId,
     permissionId,
     message,
@@ -86,21 +78,18 @@ async function sendNotification(sessionId, permissionId, event) {
   });
 
   const body = [
-    `[opencode] ${id}`,
+    `[opencode] ${permissionId}`,
     '',
     `Tool: ${tool}`,
     pattern ? `Pattern: ${pattern}` : '',
     '',
     message,
-    '',
-    'Tap a button to respond.',
   ].filter(Boolean).join('\n');
 
-  // Action buttons: Allow once, Allow always, Deny
   const actions = [
-    `http, ✅ Allow once, ${NTFY_URL}, method=POST, body=${JSON.stringify(id + ':allow')}, clear=true`,
-    `http, 🔓 Allow always, ${NTFY_URL}, method=POST, body=${JSON.stringify(id + ':always')}, clear=true`,
-    `http, ❌ Deny, ${NTFY_URL}, method=POST, body=${JSON.stringify(id + ':deny')}, clear=true`,
+    `http, ✅ Allow once, ${NTFY_URL}, method=POST, body=${JSON.stringify(permissionId + ':allow')}, clear=true`,
+    `http, 🔓 Allow always, ${NTFY_URL}, method=POST, body=${JSON.stringify(permissionId + ':always')}, clear=true`,
+    `http, ❌ Deny, ${NTFY_URL}, method=POST, body=${JSON.stringify(permissionId + ':deny')}, clear=true`,
   ].join('; ');
 
   try {
@@ -110,93 +99,30 @@ async function sendNotification(sessionId, permissionId, event) {
       'Priority': 'high',
       'Actions': actions,
     });
-    console.log(`  [NOTIFY] Sent: ${tool} (${id})`);
+    console.log(`  ✅ Sent: ${tool} (${permissionId})`);
   } catch (err) {
-    console.error(`  [NOTIFY] Failed: ${err.message}`);
+    console.error(`  ❌ Failed to send: ${err.message}`);
   }
 }
 
-// ─── Respond to opencode permission ─────────────────────────
-async function respondToPermission(sessionId, permissionId, response) {
+// ─── Respond to opencode permission via SDK ─────────────────
+async function respondToPermission(client, sessionId, permissionId, response) {
   try {
-    const url = `${OPENCODE_URL}/session/${sessionId}/permissions/${permissionId}`;
-    const body = JSON.stringify({ response });
-    await httpPost(url, body, { 'Content-Type': 'application/json' });
-    console.log(`  [REPLY] ${permissionId} → ${response}`);
+    await client.postSessionByIdPermissionsByPermissionId({
+      path: { id: sessionId, permissionId: permissionId },
+      body: { response },
+    });
+    console.log(`  ✅ Responded: ${permissionId} → ${response}`);
     pendingPermissions.delete(permissionId);
   } catch (err) {
-    console.error(`  [REPLY] Failed: ${err.message}`);
+    console.error(`  ❌ Response failed: ${err.message}`);
   }
 }
 
-// ─── SSE listener for opencode events ───────────────────────
-function listenToOpencode() {
-  console.log(`\n  Connecting to opencode at ${OPENCODE_URL}...`);
-
-  const req = http.get(`${OPENCODE_URL}/event`, (res) => {
-    console.log('  Connected! Listening for events...\n');
-
-    let buffer = '';
-
-    res.on('data', (chunk) => {
-      buffer += chunk.toString();
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // Keep incomplete line in buffer
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6).trim();
-        if (!data || data === '{}') continue;
-
-        try {
-          const event = JSON.parse(data);
-          handleEvent(event);
-        } catch {}
-      }
-    });
-
-    res.on('end', () => {
-      console.log('  Connection lost. Reconnecting in 3s...');
-      setTimeout(listenToOpencode, 3000);
-    });
-  });
-
-  req.on('error', (err) => {
-    console.error(`  Connection failed: ${err.message}`);
-    console.log('  Retrying in 3s...');
-    setTimeout(listenToOpencode, 3000);
-  });
-
-  req.setTimeout(0); // No timeout for SSE
-}
-
-// ─── Event handler ──────────────────────────────────────────
-function handleEvent(event) {
-  const { type, properties } = event;
-
-  if (type === 'permission.asked') {
-    const sessionId = properties?.sessionID || properties?.session?.id;
-    const permissionId = properties?.permissionID || properties?.id;
-    if (sessionId && permissionId) {
-      console.log(`  [EVENT] Permission asked: ${properties?.tool || 'unknown'} (${permissionId})`);
-      sendNotification(sessionId, permissionId, event);
-    }
-  } else if (type === 'session.idle') {
-    console.log('  [EVENT] Session idle — waiting for input');
-  } else if (type === 'session.error') {
-    console.log('  [EVENT] Session error');
-  } else if (type === 'permission.replied') {
-    const permissionId = properties?.permissionID || properties?.id;
-    if (permissionId) {
-      pendingPermissions.delete(permissionId);
-    }
-  }
-}
-
-// ─── Response listener (polls ntfy for user taps) ───────────
-function listenForResponses() {
+// ─── Poll ntfy for user responses ───────────────────────────
+function startResponsePoller(client) {
   let lastMsgId = null;
-  console.log(`  Listening for responses on "${NTFY_TOPIC}"...\n`);
+  console.log(`\n  📱 Listening for responses on "${NTFY_TOPIC}"...`);
 
   const poll = async () => {
     try {
@@ -211,16 +137,15 @@ function listenForResponses() {
           if (msg.id) lastMsgId = msg.id;
           if (!msg.message) continue;
 
-          // Parse response: "permissionId:allow" / "permissionId:always" / "permissionId:deny"
           const match = msg.message.trim().match(/^([a-f0-9-]+):(allow|always|deny)$/i);
           if (match) {
             const [, permId, answer] = match;
             const pending = pendingPermissions.get(permId);
             if (pending) {
               const response = answer === 'deny' ? 'deny' : answer === 'always' ? 'allow-always' : 'allow-once';
-              respondToPermission(pending.sessionId, permId, response);
+              await respondToPermission(client, pending.sessionId, permId, response);
             } else {
-              console.log(`  [RESPONSE] Unknown or expired: ${permId}`);
+              console.log(`  ⚠️  Expired or unknown: ${permId}`);
             }
           }
         }
@@ -232,28 +157,64 @@ function listenForResponses() {
   poll();
 }
 
-// ─── Cleanup old entries every 5 min ────────────────────────
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, data] of pendingPermissions) {
-    if (now - data.timestamp > 300000) {
-      pendingPermissions.delete(id);
-    }
-  }
-}, 300000);
-
 // ─── Main ───────────────────────────────────────────────────
-console.log(`
+async function main() {
+  console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║         opencode-bridge                                  ║
 ║                                                          ║
-║  opencode server: ${OPENCODE_URL}              ║
-║  ntfy topic:      ${NTFY_TOPIC}                       ║
+║  Starting opencode server...                             ║
+║  ntfy topic: ${NTFY_TOPIC.padEnd(40)}║
 ║                                                          ║
-║  Permissions → Phone notifications                       ║
-║  Phone taps   → Auto-approve in opencode                 ║
+║  Permission prompts → Phone notifications                 ║
+║  Phone taps         → Auto-approve                       ║
 ╚══════════════════════════════════════════════════════════╝
 `);
 
-listenToOpencode();
-listenForResponses();
+  // Start opencode server + get client
+  const { client } = await createOpencode({
+    hostname: '127.0.0.1',
+    port: 4096,
+  });
+
+  console.log('  ✅ opencode server running at http://127.0.0.1:4096\n');
+
+  // Start response poller
+  const respondClient = createOpencodeClient({ baseUrl: 'http://127.0.0.1:4096' });
+  startResponsePoller(respondClient);
+
+  // Subscribe to events via SSE
+  console.log('  🔍 Listening for permission events...\n');
+
+  const events = await client.event.subscribe();
+
+  for await (const event of events.stream) {
+    const { type, properties } = event;
+
+    if (type === 'permission.asked') {
+      const sessionId = properties?.sessionID || properties?.session?.id || properties?.session_id;
+      const permissionId = properties?.permissionID || properties?.id || properties?.permission_id;
+
+      console.log(`  🔒 Permission asked: ${properties?.tool || '?'}`);
+      console.log(`     session=${sessionId} perm=${permissionId}`);
+
+      if (sessionId && permissionId) {
+        await sendNotification(sessionId, permissionId, properties);
+      } else {
+        console.log('  ⚠️  Missing IDs — cannot respond from phone');
+        console.log('     Full event:', JSON.stringify(properties).slice(0, 300));
+      }
+    } else if (type === 'permission.replied') {
+      const permissionId = properties?.permissionID || properties?.id;
+      if (permissionId) {
+        pendingPermissions.delete(permissionId);
+        console.log(`  ✅ Permission resolved: ${permissionId}`);
+      }
+    }
+  }
+}
+
+main().catch((err) => {
+  console.error(`\n  ❌ Fatal: ${err.message}\n`);
+  process.exit(1);
+});
