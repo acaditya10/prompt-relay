@@ -92,18 +92,10 @@ async function send(message, choices = null) {
   // Add action buttons for choices
   if (choices && choices.length > 0) {
     const actions = choices.map((c, i) => {
-      // User taps button → sends a message to the topic via ntfy POST
-      return JSON.stringify({
-        action: 'http',
-        label: c,
-        method: 'POST',
-        url: `${NTFY_URL}/${topic}`,
-        body: `${id}:${i + 1}`,
-        headers: { 'Content-Type': 'text/plain' },
-        clear: true,
-      });
+      const body = `${id}:${i + 1}`;
+      return `http, ${c}, ${NTFY_URL}/${topic}, method=POST, body=${JSON.stringify(body)}, clear=true`;
     });
-    headers['Actions'] = actions.join(', ');
+    headers['Actions'] = actions.join('; ');
   }
 
   try {
