@@ -36,36 +36,33 @@ if %errorlevel% neq 0 (
 echo  [2/4] Generating icons...
 node generate-icons.js
 
-:: Check ngrok
-where ngrok >nul 2>&1
-if %errorlevel% neq 0 (
-    echo.
-    echo  [!] ngrok not found. Install it from: https://ngrok.com/download
-    echo  [!] After installing, run this script again.
-    echo.
-    echo  Alternatively, you can skip ngrok and access locally:
-    echo    http://localhost:3077
-    echo.
-    echo  Starting server only...
-    echo.
-    node index.js
-    goto :end
-)
-
+:: Check for tunnel tool (prefer ngrok, fallback to localtunnel)
 echo  [3/4] Starting server...
 start /b node index.js
 
 :: Wait for server to start
 timeout /t 2 /nobreak >nul
 
-echo  [4/4] Starting ngrok tunnel...
+echo  [4/4] Starting tunnel...
 echo.
 echo  ===================================
 echo   Your PWA URL (open on phone):
 echo  ===================================
 echo.
 
-ngrok http 3077 --log=stdout
+where ngrok >nul 2>&1
+if %errorlevel% equ 0 (
+    ngrok http 3077
+) else (
+    where lt >nul 2>&1
+    if %errorlevel% equ 0 (
+        lt --port 3077
+    ) else (
+        echo  [!] No tunnel tool found. Installing localtunnel...
+        call npm install -g localtunnel
+        lt --port 3077
+    )
+)
 
 :end
 pause

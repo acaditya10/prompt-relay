@@ -37,23 +37,20 @@ SERVER_PID=$!
 # Wait for server
 sleep 2
 
-# Start ngrok or fallback to local
+# Start tunnel (prefer ngrok, fallback to localtunnel)
+echo "  [4/4] Starting tunnel..."
+echo ""
+echo "  ==================================="
+echo "   Your PWA URL (open on phone):"
+echo "  ==================================="
+echo ""
+
 if command -v ngrok &> /dev/null; then
-    echo "  [4/4] Starting ngrok tunnel..."
-    echo ""
-    echo "  ==================================="
-    echo "   Your PWA URL (open on phone):"
-    echo "  ==================================="
-    echo ""
     ngrok http 3077
+elif command -v lt &> /dev/null; then
+    lt --port 3077
 else
-    echo ""
-    echo "  [!] ngrok not found."
-    echo "  Install: https://ngrok.com/download"
-    echo ""
-    echo "  Starting server on local only:"
-    echo "    http://localhost:3077"
-    echo ""
-    echo "  Press Ctrl+C to stop."
-    wait $SERVER_PID
+    echo "  Installing localtunnel..."
+    npm install -g localtunnel
+    lt --port 3077
 fi
