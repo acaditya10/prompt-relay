@@ -1,0 +1,15 @@
+{
+  "name": "opencode-mobile-notify",
+  "version": "1.0.0",
+  "description": "Mobile notification system for opencode - get input prompts on your phone",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.0"
+  }
+}
