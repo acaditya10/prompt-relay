@@ -1,77 +1,65 @@
 # prompt-relay
 
-Send input prompts from your laptop to your phone. One-time setup, works forever.
+Send opencode permission prompts to your phone. Respond with a tap.
 
-Uses [ntfy.sh](https://ntfy.sh) — open-source push notifications. No accounts, no cloud services, no tunnel.
+## Setup (one time)
 
-## Setup (one time, 2 minutes)
+1. Install **ntfy** on Android → subscribe to a topic (e.g. `opencode-input`)
+2. Run: `node index.js config` → enter your topic name
+3. Done.
 
-1. Install **ntfy** from Play Store on your Android
-2. Open the app → tap **"Subscribe to topic"** → type any name (e.g. `my-prompts`)
-3. Run:
-   ```bash
-   node index.js config
-   ```
-   Enter the same topic name. Done.
-
-## Usage
+## Quick usage (custom scripts)
 
 ```bash
-# Simple notification
-node index.js send "Deploy to production?"
-
-# With choices (tappable buttons on phone)
-node index.js send "Pick a database" --choices PostgreSQL,MySQL,SQLite
-
-# Test it
-node index.js test
-
-# Listen for responses
-node index.js listen
+node index.js send "Deploy?" --choices Yes,No
 ```
 
-## How it works
+## opencode bridge (respond to permission prompts from phone)
+
+This sends opencode's "Allow / Deny" prompts to your phone as notifications with tappable buttons.
+
+### Prerequisites
+
+- opencode with server enabled (already configured in your global config)
+- ntfy app on phone
+
+### Run
+
+```bash
+# Terminal 1: Start opencode (server mode)
+opencode
+
+# Terminal 2: Start the bridge
+node bridge.js
+```
+
+When opencode asks for permission (e.g. `external_directory`), you'll get a notification on your phone with:
+- ✅ Allow once
+- 🔓 Allow always
+- ❌ Deny
+
+Tap a button — it auto-responds in opencode.
+
+### How it works
 
 ```
-┌──────────────┐   POST ntfy.sh   ┌──────────┐   Push    ┌──────────────┐
-│  Laptop      │ ───────────────► │  ntfy    │ ────────► │  Phone       │
-│  (script)    │                  │  server  │           │  (ntfy app)  │
-└──────────────┘                  └──────────┘           └──────┬───────┘
-                                                                │
-                              User taps choice button           │
-                              or types response                 │
-                              ◄──────────────────────────────────┘
+opencode (server)  ←SSE→  bridge.js  ←POST→  ntfy.sh  ←push→  Phone
+                         bridge.js  ←poll←   ntfy.sh  ←tap──   Phone
 ```
 
-- **Sending**: Script POSTs to `ntfy.sh/topic` → phone gets instant notification
-- **Responding**: Tap action buttons or type `<id>:<number>` in the ntfy app
-- **Receiving**: Script polls `ntfy.sh/topic` for response messages
-
-## Response format
-
-When you send a prompt with choices, the phone shows action buttons. Tapping one sends a message like `abc123:1` to the topic. The script picks this up.
-
-You can also type responses manually in the ntfy app:
-```
-abc123:1
-```
+1. Bridge listens to opencode's event stream (SSE)
+2. When permission is asked → sends ntfy notification with buttons
+3. User taps button → ntfy sends response to bridge
+4. Bridge calls opencode's SDK endpoint to approve/deny
 
 ## Files
 
 ```
 prompt-relay/
-├── index.js          # The entire tool (single file)
-├── .config.json      # Your topic (auto-created)
+├── index.js      # Simple ntfy sender (custom scripts)
+├── bridge.js     # opencode ↔ ntfy bridge (permission prompts)
 └── README.md
 ```
-
-## Tech
-
-| What | Size |
-|------|------|
-| Laptop | Single Node.js file, 0 dependencies |
-| Phone | ntfy app (~5 MB) |
-| Network | ntfy.sh free tier (no account needed) |
 
 ## License
 
