@@ -1,0 +1,12 @@
+[2026-09-05T01:31:42.103Z] ========================================
+[2026-09-05T01:31:42.108Z] opencode-bridge v4 starting
+[2026-09-05T01:31:42.108Z] Target: http://127.0.0.1:4096, ntfy topic: opencode-input
+[2026-09-05T01:31:42.127Z] Connected to opencode server
+[2026-09-05T01:31:42.131Z] Listening for responses on "opencode-input"
+[2026-09-05T01:31:42.162Z] Subscribing to /global/event ...
+[2026-09-05T01:32:09.381Z] ========================================
+[2026-09-05T01:32:09.385Z] opencode-bridge v4 starting
+[2026-09-05T01:32:09.386Z] Target: http://127.0.0.1:4096, ntfy topic: opencode-input
+[2026-09-05T01:32:09.397Z] Connected to opencode server
+[2026-09-05T01:32:09.398Z] Listening for responses on "opencode-input"
+[2026-09-05T01:32:09.434Z] Subscribing to /global/event ...
