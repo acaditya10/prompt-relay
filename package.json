@@ -1,0 +1,12 @@
+{
+  "name": "prompt-relay",
+  "version": "2.0.0",
+  "description": "Send input prompts to your phone via ntfy.sh — one-time setup, works forever",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "send": "node index.js send",
+    "listen": "node index.js listen"
+  },
+  "dependencies": {}
+}
